@@ -16,6 +16,18 @@
     <div id="addQuoteFormContainer">
         </div>
 
-    <script src="script.js" defer></script>
+    <hr> <h2>Web Storage & JSON Handling</h2>
+
+    <div>
+        <h3>Export Quotes</h3>
+        <button id="exportQuotes">Export Quotes to JSON</button>
+    </div>
+
+    <div>
+        <h3>Import Quotes</h3>
+        <input type="file" id="importFile" accept=".json" onchange="importFromJsonFile(event)">
+    </div>
+
+    <hr> <script src="script.js" defer></script>
 </body>
 </html>
