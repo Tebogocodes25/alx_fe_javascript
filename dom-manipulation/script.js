@@ -1,5 +1,5 @@
-// 1. Manage an array of quote objects
-const quotes = [
+// Initial quotes array
+let quotes = [
     { text: "The only way to do great work is to love what you do.", category: "Inspiration" },
     { text: "Innovation distinguishes between a leader and a follower.", category: "Innovation" },
     { text: "Strive not to be a success, but rather to be of value.", category: "Life" },
@@ -9,15 +9,51 @@ const quotes = [
 
 // Get references to key DOM elements
 const quoteDisplay = document.getElementById('quoteDisplay');
-const newQuoteButton = document.getElementById('newQuote'); // The "Show New Quotes" button
-const addQuoteFormContainer = document.getElementById('addQuoteFormContainer'); // Container for the dynamically created form
+const newQuoteButton = document.getElementById('newQuote');
+const addQuoteFormContainer = document.getElementById('addQuoteFormContainer');
+const exportQuotesButton = document.getElementById('exportQuotes'); // Added for export functionality
+const importFileInput = document.getElementById('importFile'); // Added for import functionality
 
-// Function to display a random quote - named 'showRandomQuote' as per your prompt
+// --- Helper Functions for Web Storage ---
+
+// Function to save quotes to Local Storage
+function saveQuotes() {
+    localStorage.setItem('quotes', JSON.stringify(quotes));
+}
+
+// Function to load quotes from Local Storage
+function loadQuotes() {
+    const storedQuotes = localStorage.getItem('quotes');
+    if (storedQuotes) {
+        quotes = JSON.parse(storedQuotes);
+    } else {
+        // If no quotes in local storage, save the initial ones
+        saveQuotes();
+    }
+}
+
+// Function to save the last viewed quote to Session Storage
+function saveLastViewedQuote(quote) {
+    sessionStorage.setItem('lastViewedQuote', JSON.stringify(quote));
+}
+
+// Function to load the last viewed quote from Session Storage
+function loadLastViewedQuote() {
+    const lastQuote = sessionStorage.getItem('lastViewedQuote');
+    if (lastQuote) {
+        return JSON.parse(lastQuote);
+    }
+    return null;
+}
+
+
+// --- Core DOM Manipulation Functions ---
+
+// Function to display a random quote (showRandomQuote)
 function showRandomQuote() {
     // Clear previous quotes
     quoteDisplay.innerHTML = '';
 
-    // Handle case where there are no quotes
     if (quotes.length === 0) {
         quoteDisplay.textContent = "No quotes available. Add some!";
         return;
@@ -27,6 +63,9 @@ function showRandomQuote() {
     const randomIndex = Math.floor(Math.random() * quotes.length);
     const randomQuote = quotes[randomIndex];
 
+    // Save this quote to session storage
+    saveLastViewedQuote(randomQuote);
+
     // Create new elements to display the quote
     const quoteParagraph = document.createElement('p');
     const categorySpan = document.createElement('span');
@@ -35,19 +74,17 @@ function showRandomQuote() {
     quoteParagraph.textContent = `"${randomQuote.text}"`;
     categorySpan.textContent = `Category: ${randomQuote.category}`;
     categorySpan.style.fontStyle = 'italic';
-    categorySpan.style.display = 'block'; // Make category appear on a new line
+    categorySpan.style.display = 'block'; // Make category appear on a new line for better readability
 
     // Append them to the quoteDisplay div
     quoteDisplay.appendChild(quoteParagraph);
     quoteDisplay.appendChild(categorySpan);
 }
 
-// Function to dynamically create and add the "Add Quote" form - named 'createAddQuoteForm' as per your prompt
+// Function to dynamically create and add the "Add Quote" form (createAddQuoteForm)
 function createAddQuoteForm() {
-    // Clear any existing content in the container
-    addQuoteFormContainer.innerHTML = '';
+    addQuoteFormContainer.innerHTML = ''; // Clear any existing content
 
-    // Create the elements for the form
     const formDiv = document.createElement('div');
     const heading = document.createElement('h2');
     const quoteTextInput = document.createElement('input');
@@ -58,15 +95,15 @@ function createAddQuoteForm() {
     heading.textContent = "Add New Quote";
 
     quoteTextInput.type = "text";
-    quoteTextInput.id = "newQuoteText"; // Keep IDs for easy access
+    quoteTextInput.id = "newQuoteText";
     quoteTextInput.placeholder = "Enter a new quote";
 
     categoryTextInput.type = "text";
-    categoryTextInput.id = "newQuoteCategory"; // Keep IDs for easy access
+    categoryTextInput.id = "newQuoteCategory";
     categoryTextInput.placeholder = "Enter quote category";
 
     addButton.textContent = "Add Quote";
-    addButton.onclick = addQuote; // Attach the addQuote function to the button's click event
+    addButton.onclick = addQuote; // Attach the addQuote function directly
 
     // Append elements to the formDiv
     formDiv.appendChild(heading);
@@ -78,9 +115,8 @@ function createAddQuoteForm() {
     addQuoteFormContainer.appendChild(formDiv);
 }
 
-// Function to add a new quote (remains largely the same)
+// Function to add a new quote (addQuote)
 function addQuote() {
-    // Get inputs directly by their IDs
     const newQuoteTextInput = document.getElementById('newQuoteText');
     const newQuoteCategoryInput = document.getElementById('newQuoteCategory');
 
@@ -93,33 +129,90 @@ function addQuote() {
         return;
     }
 
-    // Create the new quote object
     const newQuote = {
         text: newQuoteText,
         category: newQuoteCategory
     };
 
-    // Add the new quote to our quotes array
     quotes.push(newQuote);
+    saveQuotes(); // Save to local storage after adding
 
-    // Clear the input fields after adding
+    // Clear the input fields
     newQuoteTextInput.value = '';
     newQuoteCategoryInput.value = '';
 
-    // Give feedback to the user
     alert("Quote added successfully!");
 
-    // Optional: After adding a quote, you might want to show a random one,
-    // which could even be the new one.
-    // showRandomQuote();
+    // You might want to update the displayed quote to include the new one
+    showRandomQuote();
 }
 
-// Event Listeners:
+// --- JSON Import/Export Functions ---
+
+// Function to export quotes to JSON file
+function exportQuotesToJson() {
+    const dataStr = JSON.stringify(quotes, null, 2); // null, 2 for pretty printing
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "quotes.json"; // Filename
+    document.body.appendChild(a); // Append to body to make it clickable
+    a.click(); // Programmatically click the link
+    document.body.removeChild(a); // Clean up
+    URL.revokeObjectURL(url); // Release the URL object
+}
+
+// Function to import quotes from JSON file
+function importFromJsonFile(event) {
+    const fileReader = new FileReader();
+    fileReader.onload = function(event) {
+        try {
+            const importedQuotes = JSON.parse(event.target.result);
+            // Optional: You could merge or replace
+            quotes = importedQuotes; // Replacing existing quotes
+            saveQuotes(); // Save imported quotes to local storage
+            alert("Quotes imported successfully!");
+            showRandomQuote(); // Display a quote from the imported list
+        } catch (e) {
+            alert("Error parsing JSON file. Please ensure it's a valid JSON format.");
+            console.error("JSON parsing error:", e);
+        }
+    };
+    // Read the file as text
+    fileReader.readAsText(event.target.files[0]);
+}
+
+
+// --- Event Listeners and Initial Setup ---
+
 // 1. Attach showRandomQuote to the "Show New Quotes" button click
 newQuoteButton.addEventListener('click', showRandomQuote);
 
-// 2. Initial setup when the page loads
+// 2. Attach exportQuotesToJson to the "Export Quotes" button click
+exportQuotesButton.addEventListener('click', exportQuotesToJson);
+
+// 3. Initial setup when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    showRandomQuote();       // Display an initial random quote
-    createAddQuoteForm();    // Dynamically create and display the "Add Quote" form
+    loadQuotes(); // Load quotes from local storage first
+    const lastViewed = loadLastViewedQuote(); // Load last viewed from session storage
+
+    if (lastViewed && quotes.some(q => q.text === lastViewed.text && q.category === lastViewed.category)) {
+        // If last viewed quote exists and is still in our quotes list, display it
+        // Clear display first
+        quoteDisplay.innerHTML = '';
+        const quoteParagraph = document.createElement('p');
+        const categorySpan = document.createElement('span');
+        quoteParagraph.textContent = `"${lastViewed.text}"`;
+        categorySpan.textContent = `Category: ${lastViewed.category}`;
+        categorySpan.style.fontStyle = 'italic';
+        categorySpan.style.display = 'block';
+        quoteDisplay.appendChild(quoteParagraph);
+        quoteDisplay.appendChild(categorySpan);
+    } else {
+        showRandomQuote(); // Otherwise, display a random quote
+    }
+
+    createAddQuoteForm(); // Dynamically create and display the "Add Quote" form
 });
