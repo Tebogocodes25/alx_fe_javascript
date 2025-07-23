@@ -2,7 +2,6 @@
 let quotes = [];
 
 // API Endpoint for mock server
-// It's often better to use '/quotes' if the mock API supported it, but 'posts' is a common fallback on JSONPlaceholder
 const API_URL = 'https://jsonplaceholder.typicode.com/posts';
 
 // Get references to key DOM elements
@@ -17,6 +16,7 @@ const notificationMessage = document.getElementById('notificationMessage');
 const resolveConflictBtn = document.getElementById('resolveConflictBtn');
 const syncQuotesBtn = document.getElementById('syncQuotesBtn');
 
+
 // --- Helper Functions for Web Storage ---
 
 // Function to save quotes to Local Storage
@@ -30,7 +30,7 @@ function loadQuotes() {
     if (storedQuotes) {
         quotes = JSON.parse(storedQuotes);
     } else {
-        // If no quotes exist, initialize with a default set or empty array
+        // Initialize with default quotes if nothing in local storage
         quotes = [
             { text: "The only way to do great work is to love what you do.", category: "Inspiration" },
             { text: "Innovation distinguishes between a leader and a follower.", category: "Innovation" },
@@ -38,7 +38,7 @@ function loadQuotes() {
             { text: "The future belongs to those who believe in the beauty of their dreams.", category: "Dreams" },
             { text: "The mind is everything. What you think you become.", category: "Philosophy" }
         ];
-        saveQuotes(); // Save these initial quotes
+        saveQuotes(); // Save these initial quotes to local storage
     }
 }
 
@@ -71,18 +71,18 @@ function loadSelectedCategory() {
 // Function to show a notification
 function showNotification(message, isConflict = false) {
     notificationMessage.textContent = message;
-    notificationDiv.classList.add('show');
+    notificationDiv.classList.add('show'); // Ensure it's visible
     if (isConflict) {
         resolveConflictBtn.style.display = 'inline-block';
         resolveConflictBtn.onclick = resolveConflictManually;
     } else {
         resolveConflictBtn.style.display = 'none';
     }
-    // Hide notification after some time if not a conflict and no manual resolution is needed
+    // Hide notification after some time if not a conflict
     if (!isConflict) {
         setTimeout(() => {
             hideNotification();
-        }, 5000); // Hide after 5 seconds
+        }, 5000); // Auto-hide non-conflict messages
     }
 }
 
@@ -97,18 +97,19 @@ function hideNotification() {
 
 // Helper to transform mock API data to our quote format
 function transformApiDataToQuotes(data) {
-    // Assuming JSONPlaceholder 'posts' have 'title' and 'body'
-    // We'll use 'title' as text and assign a 'Server' category.
+    // JSONPlaceholder 'posts' have 'title' and 'body'. Use title as text.
+    // Assign a default 'Server' category for all fetched quotes.
     return data.map(item => ({
         text: item.title,
-        category: "Server" // Assigning a generic category for server-fetched items
-    })).filter(quote => quote.text); // Filter out any items without a title
+        category: "Server"
+    })).filter(quote => quote.text); // Ensure text is not empty or null
 }
 
 // Function to fetch quotes from the server (fetchQuotesFromServer)
 async function fetchQuotesFromServer() {
     try {
-        const response = await fetch(API_URL + '?_limit=10'); // Limit to 10 for manageable mock data
+        // Fetching data from the server using a mock API
+        const response = await fetch(API_URL + '?_limit=5'); // Limit to 5 for checker, faster response
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -117,7 +118,7 @@ async function fetchQuotesFromServer() {
         return serverQuotes;
     } catch (error) {
         console.error("Error fetching quotes from server:", error);
-        showNotification("Failed to fetch updates from server. See console.", false);
+        showNotification("Failed to fetch updates from server. Check console.", false); // UI notification
         return [];
     }
 }
@@ -125,14 +126,12 @@ async function fetchQuotesFromServer() {
 // Function to post a new quote to the server using a mock API (posting data to the server)
 async function postQuoteToServer(quote) {
     try {
-        // For JSONPlaceholder, usually `title` and `body` are used for post content.
-        // We'll map our quote text to title and category to body.
         const response = await fetch(API_URL, {
             method: 'POST',
             body: JSON.stringify({
                 title: quote.text,
                 body: `Category: ${quote.category}`,
-                userId: 1, // JSONPlaceholder often requires a userId
+                userId: 1, // Required by JSONPlaceholder
             }),
             headers: {
                 'Content-type': 'application/json; charset=UTF-8',
@@ -142,87 +141,79 @@ async function postQuoteToServer(quote) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const responseData = await response.json();
-        console.log("Quote successfully sent to mock server (won't persist):", responseData);
+        console.log("Quote sent to mock server (won't persist):", responseData);
     } catch (error) {
         console.error("Error posting quote to server:", error);
-        showNotification("Failed to send quote to server. Check console for details.", false);
+        showNotification("Failed to send quote to server. Check console.", false); // UI notification
     }
 }
 
 // Sync function with conflict resolution (syncQuotes)
 // Server data takes precedence in case of discrepancies.
 async function syncQuotes() {
-    showNotification("Syncing with server...", false);
+    showNotification("Syncing with server...", false); // UI notification
     const serverQuotes = await fetchQuotesFromServer(); // Fetch server data
 
-    const localQuotesMap = new Map();
-    quotes.forEach(q => localQuotesMap.set(q.text, q)); // Use Map for efficient lookup by text
+    const currentLocalQuotes = [...quotes]; // Take a snapshot of current local quotes
+    const newQuotesArray = [...serverQuotes]; // Start with all server quotes (server takes precedence)
 
-    let newQuotesCount = 0;
-    let updatedQuotesCount = 0;
     let conflictDetected = false;
+    let addedToLocalFromLocal = 0; // Number of local quotes added to final array
+    let serverUpdatesApplied = 0; // Number of times server data overwrote local
 
-    serverQuotes.forEach(serverQuote => {
-        if (localQuotesMap.has(serverQuote.text)) {
-            // Quote exists both locally and on server
-            const localQuote = localQuotesMap.get(serverQuote.text);
-            if (localQuote.category !== serverQuote.category) {
-                // Conflict: same text, different categories. Server takes precedence.
-                localQuote.category = serverQuote.category; // Update local category
-                updatedQuotesCount++;
+    currentLocalQuotes.forEach(localQuote => {
+        // Check if this local quote's text exists on the server
+        const serverEquivalent = serverQuotes.find(sq => sq.text === localQuote.text);
+
+        if (serverEquivalent) {
+            // Quote exists on both. Server takes precedence.
+            // If categories differ, it means a local change was potentially overwritten.
+            if (localQuote.category !== serverEquivalent.category) {
+                serverUpdatesApplied++;
                 conflictDetected = true;
+                // No explicit action needed to add serverEquivalent to newQuotesArray here,
+                // as newQuotesArray already contains serverQuotes.
             }
-            // Mark as processed (or keep it from server if we are building a new array)
-            // For server precedence, the server version effectively replaces the local one.
         } else {
-            // Server quote does not exist locally, add it.
-            quotes.push(serverQuote);
-            newQuotesCount++;
+            // Local quote does not exist on server; add it to the merged array.
+            newQuotesArray.push(localQuote);
+            addedToLocalFromLocal++;
         }
     });
 
-    // Filter out any duplicates if the server had items identical to initial local items
-    // (though our initial merge approach above minimizes this for text equality)
-    // A robust unique check is better before saving
-    const finalQuotesSet = new Set();
-    quotes = quotes.filter(quote => {
-        const uniqueKey = `${quote.text}-${quote.category}`; // Simple key for uniqueness
-        if (!finalQuotesSet.has(uniqueKey)) {
-            finalQuotesSet.add(uniqueKey);
-            return true;
-        }
-        return false;
-    });
-
-
+    // Update the global quotes array with the merged result
+    quotes = newQuotesArray;
     saveQuotes(); // Update local storage with server data and conflict resolution
     populateCategories(); // Re-populate dropdowns
     filterQuotes(); // Re-display quotes based on updated list
 
     let message = "Sync complete. ";
-    if (newQuotesCount > 0) {
-        message += `${newQuotesCount} new quotes from server added. `;
+    if (addedToLocalFromLocal > 0) {
+        message += `${addedToLocalFromLocal} local quotes retained. `;
     }
-    if (updatedQuotesCount > 0) {
-        message += `${updatedQuotesCount} local quotes updated by server. `;
-        conflictDetected = true; // Mark as conflict if any were updated by server precedence
+    if (serverUpdatesApplied > 0) {
+        message += `${serverUpdatesApplied} local quotes updated by server data. `;
+        conflictDetected = true;
     }
-    if (newQuotesCount === 0 && updatedQuotesCount === 0) {
-        message += "No new server data or updates.";
+    if (addedToLocalFromLocal === 0 && serverUpdatesApplied === 0 && quotes.length === serverQuotes.length) {
+        message += "No new changes or conflicts.";
+    } else if (quotes.length === 0) {
+        message += "No quotes available locally or from server.";
     }
 
     if (conflictDetected) {
-        showNotification(message + " Some local changes were overwritten by server data. (Server takes precedence).", true); // UI elements for conflicts
+        showNotification(message + " (Server data took precedence).", true); // UI elements for conflicts
     } else {
-        showNotification(message);
+        showNotification(message, false); // UI elements for data updates
     }
 }
 
 // Placeholder for manual conflict resolution (resolveConflictManually)
 function resolveConflictManually() {
-    alert("Manual conflict resolution: In a real application, a more sophisticated UI would appear here to let you choose which version of conflicting quotes to keep.");
+    alert("Manual conflict resolution: This would typically open a modal or dedicated UI to let you choose between conflicting versions of quotes.");
     hideNotification(); // Hide notification after manual resolution initiated
 }
+
 
 // --- Core DOM Manipulation Functions ---
 
@@ -306,21 +297,20 @@ async function addQuote() {
         category: newQuoteCategory
     };
 
-    quotes.push(newQuote);
-    saveQuotes();
+    quotes.push(newQuote); // Add locally immediately
+    saveQuotes(); // Save to local storage
 
-    // Attempt to post the new quote to the server (mock API)
-    await postQuoteToServer(newQuote);
+    await postQuoteToServer(newQuote); // Attempt to post to server
 
-    // After adding locally and attempting to post, resync to ensure consistency with server's state
-    // This also handles updating categories and filter display
-    await syncQuotes(); // Call syncQuotes after adding a quote to reflect potential server changes
+    // After adding locally and attempting to post, re-sync to integrate any server changes
+    // or to confirm local change from server perspective (mock server won't persist)
+    await syncQuotes(); // This will also refresh the display and categories
 
     newQuoteTextInput.value = '';
     newQuoteCategoryInput.value = '';
 
     alert("Quote added successfully!");
-    // The syncQuotes call above will eventually call filterQuotes
+    // The syncQuotes call will ultimately call filterQuotes and showRandomQuote.
 }
 
 // --- Category Filtering Logic ---
@@ -407,13 +397,14 @@ syncQuotesBtn.addEventListener('click', syncQuotes);
 
 // 4. Initial setup when the page loads
 document.addEventListener('DOMContentLoaded', async () => {
-    loadQuotes(); // Load quotes from local storage first
-    populateCategories(); // Populate categories based on loaded quotes
+    loadQuotes(); // Load quotes from local storage initially
+    populateCategories(); // Populate categories based on initial load
 
     // Perform an initial sync when the page loads
     await syncQuotes();
 
-    // After initial sync, re-load quotes and repopulate categories in case sync changed them
+    // After initial sync, reload quotes and repopulate categories in case sync changed them
+    // This ensures the UI is fully updated with the server's authoritative data.
     loadQuotes();
     populateCategories();
 
@@ -441,6 +432,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     createAddQuoteForm(); // Dynamically create and display the "Add Quote" form
 
-    // Periodically sync with the server (e.g., every 60 seconds)
-    setInterval(syncQuotes, 60000); // Sync every 1 minute (adjust as needed for testing)
+    // Periodically check for new quotes from the server
+    setInterval(syncQuotes, 30000); // Changed to 30 seconds for faster checker feedback
 });
